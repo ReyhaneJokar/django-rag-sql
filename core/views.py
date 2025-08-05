@@ -10,6 +10,12 @@ from core.rag.rag_pipeline import RAGPipeline
 
 # Create your views here.
 
+DIALECT_MAP = {
+    'postgres':   'postgresql+psycopg2',         
+    'sqlserver':  'mssql+pyodbc',
+    'oracle':     'oracle+cx_oracle',          
+}
+
 @login_required
 def connections_view(request):
     conns = request.user.connections.all()
@@ -36,8 +42,26 @@ def dashboard_view(request):
     if not conn_id:
         return redirect('connections')
     conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
-    # create connection string
-    conn_str = f"{conn.db_type}+pyodbc://{conn.username}:{conn.password}@{conn.host}:{conn.port}/{conn.database_name}?driver=ODBC+Driver+17+for+SQL+Server"
+    dialect = DIALECT_MAP.get(conn.db_type)
+    status = ''
+    tables = []
+    
+    if not dialect:
+        status = f"Unsupported DB type: {conn.db_type}"
+    else:
+        # create connection string
+        if conn.db_type == 'sqlserver':
+            conn_str = (
+                f"{dialect}://{conn.username}:{conn.password}"
+                f"@{conn.host}:{conn.port}/{conn.database_name}"
+                f"?driver=ODBC+Driver+17+for+SQL+Server"
+            )
+        else:
+            conn_str = (
+                f"{dialect}://{conn.username}:{conn.password}"
+                f"@{conn.host}:{conn.port}/{conn.database_name}"
+            )
+
     # connection test
     try:
         engine = connect_db(conn_str)
@@ -46,7 +70,6 @@ def dashboard_view(request):
         tables = inspector.get_table_names()
     except Exception as e:
         status = f"Error: {e}"
-        tables = []
     return render(request, 'core/dashboard.html', {
         'conn': conn,
         'status': status,
@@ -61,11 +84,23 @@ def chat_view(request):
     
     # recreating connection string and engine
     conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
-    conn_str = (
-        f"{conn.db_type}+pyodbc://{conn.username}:{conn.password}@"
-        f"{conn.host}:{conn.port}/{conn.database_name}"
-        f"?driver=ODBC+Driver+17+for+SQL+Server"
-    )
+    dialect = DIALECT_MAP.get(conn.db_type)
+
+    if not dialect:
+        return redirect('dashboard')
+    
+    if conn.db_type == 'sqlserver':
+        conn_str = (
+            f"{dialect}://{conn.username}:{conn.password}"
+            f"@{conn.host}:{conn.port}/{conn.database_name}"
+            f"?driver=ODBC+Driver+17+for+SQL+Server"
+        )
+    else:
+        conn_str = (
+            f"{dialect}://{conn.username}:{conn.password}"
+            f"@{conn.host}:{conn.port}/{conn.database_name}"
+        )
+    
     try:
         engine = connect_db(conn_str)
     except Exception as e:
