@@ -1,0 +1,21 @@
+{% extends 'core/base.html' %}
+{% block content %}
+<h2>Database Connections</h2>
+
+<form method="post">{% csrf_token %}
+  {{ form.as_p }}
+  <button type="submit">Save and Connect</button>
+</form>
+
+<hr>
+<h3>Or select existing:</h3>
+<form method="post">{% csrf_token %}
+  <select name="select_conn">
+    <option value="">-- choose --</option>
+    {% for c in connections %}
+      <option value="{{ c.id }}">{{ c.database_name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Use Selected</button>
+</form>
+{% endblock %}

@@ -1,0 +1,7 @@
+sqlalchemy
+psycopg2-binary
+langchain>=0.1.0
+langchain-community>=0.0.1
+langchain-core>=0.1.50
+openai>=1.10.0
+Faker>=18.0.0

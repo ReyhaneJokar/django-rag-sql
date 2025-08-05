@@ -1,0 +1,16 @@
+{% extends 'core/base.html' %}
+{% block content %}
+<h2>Dashboard for {{ conn.name }}</h2>
+<p>Status: {{ status }}</p>
+
+<h3>Schema (tables):</h3>
+<ul>
+  {% for t in tables %}
+    <li>{{ t }}</li>
+  {% empty %}
+    <li>No tables found.</li>
+  {% endfor %}
+</ul>
+
+<p><a href="{% url 'chat' %}">Start Chat</a></p>
+{% endblock %}

@@ -1,0 +1,120 @@
+
+:root {
+  --soft-blue:  #E0EBFF;
+  --soft-purple: #EDE0FF;
+  --soft-pink:  #FFE0F0;
+  --text-color: #333333;
+  --link-color: #5A5AFF;
+  --link-hover: #3B3BFF;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, sans-serif;
+  background-color: var(--soft-blue);
+  color: var(--text-color);
+  line-height: 1.6;
+}
+
+header {
+  background-color: var(--soft-purple);
+  padding: 1rem;
+}
+
+header nav a {
+  color: var(--link-color);
+  text-decoration: none;
+  margin-right: 1rem;
+  font-weight: 500;
+}
+
+header nav a:hover {
+  color: var(--link-hover);
+}
+
+main {
+  max-width: 960px;
+  margin: 2rem auto;
+  padding: 1rem;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+h1, h2, h3 {
+  color: var(--link-color);
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+form {
+  margin-bottom: 1.5rem;
+}
+
+form input[type="text"],
+form input[type="password"],
+form input[type="number"],
+form select,
+form textarea {
+  width: 100%;
+  padding: 0.5rem;
+  margin-top: 0.25rem;
+  margin-bottom: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+form button {
+  background-color: var(--link-color);
+  color: white;
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+form button:hover {
+  background-color: var(--link-hover);
+}
+
+ul.messages {
+  list-style: none;
+  padding: 0;
+}
+
+ul.messages li {
+  background-color: var(--soft-pink);
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border-radius: 4px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+}
+
+table th,
+table td {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  text-align: left;
+}
+
+table th {
+  background-color: var(--soft-purple);
+  color: var(--text-color);
+}
+
+footer {
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.9rem;
+  background-color: var(--soft-purple);
+  margin-top: 2rem;
+}
