@@ -118,3 +118,17 @@ footer {
   background-color: var(--soft-purple);
   margin-top: 2rem;
 }
+
+.chat-results {
+  max-height: 400px;   
+  overflow-y: auto; 
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f9f9f9;
+}
+
+.chat-row {
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #eee;
+}

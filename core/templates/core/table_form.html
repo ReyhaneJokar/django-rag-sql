@@ -1,0 +1,32 @@
+{% extends 'core/base.html' %}
+
+{% block content %}
+  <h2>
+    {% if is_edit %}Edit Row {{ pk }} in {{ table_name }}
+    {% else %}Add Row to {{ table_name }}{% endif %}
+  </h2>
+
+  <form method="post">{% csrf_token %}
+    {% for col, val, is_date in fields %}
+      <label>{{ col }}</label><br>
+
+      {% if is_date %}
+        <input
+          type="date"
+          name="{{ col }}"
+          value="{{ val }}"
+        ><br><br>
+      {% else %}
+        <input
+          type="text"
+          name="{{ col }}"
+          value="{{ val }}"
+        ><br><br>
+      {% endif %}
+    {% endfor %}
+
+    <button type="submit">
+      {% if is_edit %}Save Changes{% else %}Add Row{% endif %}
+    </button>
+  </form>
+{% endblock %}

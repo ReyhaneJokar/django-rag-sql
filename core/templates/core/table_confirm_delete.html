@@ -1,0 +1,8 @@
+{% extends 'core/base.html' %}
+{% block content %}
+  <h2>Delete Row {{ pk }} from {{ table_name }}</h2>
+  <form method="post">{% csrf_token %}
+    <button type="submit">Yes, delete</button>
+    <a href="{% url 'table_list' table_name %}">Cancel</a>
+  </form>
+{% endblock %}

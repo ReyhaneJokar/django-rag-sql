@@ -6,7 +6,7 @@
 <h3>Schema (tables):</h3>
 <ul>
   {% for t in tables %}
-    <li>{{ t }}</li>
+    <li><a href="{% url 'table_list' t %}">{{ t }}</a></li>
   {% empty %}
     <li>No tables found.</li>
   {% endfor %}

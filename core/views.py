@@ -1,6 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
-from sqlalchemy import inspect
+from sqlalchemy import inspect, Table, MetaData, select, insert, update, delete
+from sqlalchemy.types import Date, DateTime
 from .models import ConnectionConfig
 from .forms import ConnectionForm
 from core.rag.llm_utils import load_llm, load_embeddings
@@ -15,6 +16,24 @@ DIALECT_MAP = {
     'sqlserver':  'mssql+pyodbc',
     'oracle':     'oracle+cx_oracle',          
 }
+
+def conn_str_for(conn):
+    dialect = DIALECT_MAP.get(conn.db_type)
+    if not dialect:
+        raise ValueError(f"Unsupported DB type: {conn.db_type}")
+
+    if conn.db_type == 'sqlserver':
+        return (
+            f"{dialect}://{conn.username}:{conn.password}"
+            f"@{conn.host}:{conn.port}/{conn.database_name}"
+            f"?driver=ODBC+Driver+17+for+SQL+Server"
+        )
+    else:
+        return (
+            f"{dialect}://{conn.username}:{conn.password}"
+            f"@{conn.host}:{conn.port}/{conn.database_name}"
+        )
+
 
 @login_required
 def connections_view(request):
@@ -39,31 +58,12 @@ def connections_view(request):
 @login_required
 def dashboard_view(request):
     conn_id = request.session.get('connection_id')
-    if not conn_id:
-        return redirect('connections')
-    conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
-    dialect = DIALECT_MAP.get(conn.db_type)
     status = ''
     tables = []
-    
-    if not dialect:
-        status = f"Unsupported DB type: {conn.db_type}"
-    else:
-        # create connection string
-        if conn.db_type == 'sqlserver':
-            conn_str = (
-                f"{dialect}://{conn.username}:{conn.password}"
-                f"@{conn.host}:{conn.port}/{conn.database_name}"
-                f"?driver=ODBC+Driver+17+for+SQL+Server"
-            )
-        else:
-            conn_str = (
-                f"{dialect}://{conn.username}:{conn.password}"
-                f"@{conn.host}:{conn.port}/{conn.database_name}"
-            )
-
+    conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
     # connection test
     try:
+        conn_str = conn_str_for(conn)
         engine = connect_db(conn_str)
         status = "Connected"
         inspector = inspect(engine)
@@ -84,24 +84,13 @@ def chat_view(request):
     
     # recreating connection string and engine
     conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
-    dialect = DIALECT_MAP.get(conn.db_type)
+    if not conn_id:
+        return redirect('connections')
 
-    if not dialect:
-        return redirect('dashboard')
-    
-    if conn.db_type == 'sqlserver':
-        conn_str = (
-            f"{dialect}://{conn.username}:{conn.password}"
-            f"@{conn.host}:{conn.port}/{conn.database_name}"
-            f"?driver=ODBC+Driver+17+for+SQL+Server"
-        )
-    else:
-        conn_str = (
-            f"{dialect}://{conn.username}:{conn.password}"
-            f"@{conn.host}:{conn.port}/{conn.database_name}"
-        )
-    
+    conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
+
     try:
+        conn_str = conn_str_for(conn)
         engine = connect_db(conn_str)
     except Exception as e:
         return redirect('dashboard')
@@ -116,3 +105,112 @@ def chat_view(request):
         sql, rows = pipeline.run(question)
         return render(request, 'core/chat.html', {'response': rows, 'sql': sql})
     return render(request, 'core/chat.html')
+
+
+# ---------------------- CRUD OPERATIONS ON DATABASE -------------------
+
+def get_engine_from_session(request):
+    conn_id = request.session.get('connection_id')
+    conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
+    engine = connect_db(conn_str_for(conn))
+    return engine
+
+@login_required
+def table_list(request, table_name):
+    engine = get_engine_from_session(request)
+    metadata = MetaData()
+    table = Table(table_name, metadata, autoload_with=engine)
+    with engine.connect() as conn:
+        result = conn.execute(select(table)).mappings().all()
+
+    columns = table.columns.keys()
+    rows_data = [
+        [row[col] for col in columns]
+        for row in result
+    ]
+    return render(request, 'core/table_list.html', {
+        'table_name': table_name,
+        'columns': columns,
+        'rows': rows_data,
+    })
+
+@login_required
+def table_add(request, table_name):
+    engine = get_engine_from_session(request)
+    metadata = MetaData()
+    table = Table(table_name, metadata, autoload_with=engine)
+    fields = []
+    for col in table.columns:
+        is_date = isinstance(col.type, (Date, DateTime))
+        fields.append((col.name, '', is_date))
+
+    if request.method == 'POST':
+        data = {col: request.POST.get(col) for col, _, _ in fields}
+        with engine.connect() as conn:
+            conn.execute(insert(table).values(**data))
+            conn.commit()
+        return redirect('table_list', table_name=table_name)
+
+    return render(request, 'core/table_form.html', {
+        'table_name': table_name,
+        'fields':      fields,
+        'is_edit':    False,
+        'pk':         None,
+    })
+
+@login_required
+def table_edit(request, table_name, pk):
+    engine = get_engine_from_session(request)
+    metadata = MetaData()
+    table = Table(table_name, metadata, autoload_with=engine)
+    key_col = list(table.primary_key.columns)[0].name
+
+    with engine.connect() as conn:
+        existing = conn.execute(
+            select(table).where(table.c[key_col] == pk)
+        ).mappings().first()
+
+    fields = []
+    for col in table.columns:
+        value = existing.get(col.name, '')
+        if isinstance(value, (Date, DateTime)):
+            value = value.isoformat()
+        is_date = isinstance(col.type, (Date, DateTime))
+        fields.append((col.name, value, is_date))
+
+
+    if request.method == 'POST':
+        data = {col: request.POST.get(col) for col, _, _ in fields}
+        with engine.connect() as conn:
+            conn.execute(
+                update(table).where(table.c[key_col] == pk).values(**data)
+            )
+            conn.commit()
+        return redirect('table_list', table_name=table_name)
+
+    return render(request, 'core/table_form.html', {
+        'table_name': table_name,
+        'fields':      fields,
+        'is_edit':     True,
+        'pk':          pk,
+    })
+
+@login_required
+def table_delete(request, table_name, pk):
+    engine = get_engine_from_session(request)
+    metadata = MetaData()
+    table = Table(table_name, metadata, autoload_with=engine)
+    key_col = list(table.primary_key.columns)[0].name
+
+    if request.method == 'POST':
+        with engine.connect() as conn:
+            conn.execute(
+                delete(table).where(table.c[key_col] == pk)
+            )
+            conn.commit()
+        return redirect('table_list', table_name=table_name)
+
+    return render(request, 'core/table_confirm_delete.html', {
+        'table_name': table_name,
+        'pk': pk,
+    })

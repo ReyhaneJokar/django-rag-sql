@@ -1,8 +1,11 @@
 {% extends 'core/base.html' %}
 {% block content %}
 <h2>Chat</h2>
-<form method="post">{% csrf_token %}
-  <textarea name="question" rows="3" cols="40"></textarea><br>
+<form method="post">
+  {% csrf_token %}
+  <textarea name="question" rows="3" cols="40" style="width:100%; box-sizing:border-box;">
+    {{ request.POST.question|default_if_none:"" }}
+  </textarea><br>
   <button type="submit">Ask</button>
 </form>
 
@@ -10,6 +13,9 @@
 <h3>Generated SQL:</h3>
 <pre>{{ sql }}</pre>
 <h3>Results:</h3>
-<pre>{{ response }}</pre>
-{% endif %}
+  <div class="chat-results">
+      {% for row in response %}
+        <div class="chat-row">{{ row }}</div>
+      {% endfor %}
+  </div>{% endif %}
 {% endblock %}
