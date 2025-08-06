@@ -78,32 +78,38 @@ def dashboard_view(request):
 
 @login_required
 def chat_view(request):
+    sql = None
+    rows = None
+    error = None
+
     conn_id = request.session.get('connection_id')
     if not conn_id:
         return redirect('connections')
     
     # recreating connection string and engine
     conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
-    if not conn_id:
-        return redirect('connections')
-
-    conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
-
     try:
         conn_str = conn_str_for(conn)
-        engine = connect_db(conn_str)
+        engine   = connect_db(conn_str)
     except Exception as e:
         return redirect('dashboard')
 
-    sql = None
     if request.method == 'POST':
         question = request.POST['question']
         llm = load_llm()
         embeddings = load_embeddings()
         retriever = build_retriever(engine, embeddings)
         pipeline = RAGPipeline(llm, retriever, engine)
-        sql, rows = pipeline.run(question)
-        return render(request, 'core/chat.html', {'response': rows, 'sql': sql})
+        try:
+            sql, rows = pipeline.run(question)
+        except Exception as e:
+            error = str(e)
+        context = {
+        'sql':      sql,
+        'response': rows,
+        'error':    error,
+        }
+        return render(request, 'core/chat.html', context)
     return render(request, 'core/chat.html')
 
 
@@ -139,13 +145,33 @@ def table_add(request, table_name):
     engine = get_engine_from_session(request)
     metadata = MetaData()
     table = Table(table_name, metadata, autoload_with=engine)
+    
+    editable_cols = [
+        col for col in table.columns
+        if not col.primary_key and col.name != 'last_update'
+    ]
+
     fields = []
-    for col in table.columns:
-        is_date = isinstance(col.type, (Date, DateTime))
-        fields.append((col.name, '', is_date))
+    for col in editable_cols:
+        is_date     = isinstance(col.type, Date)
+        is_datetime = isinstance(col.type, DateTime)
+        fields.append((col.name, '', is_date, is_datetime))
 
     if request.method == 'POST':
-        data = {col: request.POST.get(col) for col, _, _ in fields}
+        data = {}
+        for col_name, _, is_date, is_datetime in fields:
+            raw = request.POST.get(col_name, '').strip()
+            if is_date:
+                data[col_name] = raw or None
+            elif is_datetime:
+                # raw comes as 'YYYY-MM-DDTHH:MM', append seconds
+                if raw:
+                    data[col_name] = raw + ':00'
+                else:
+                    data[col_name] = None
+            else:
+                data[col_name] = raw or None
+
         with engine.connect() as conn:
             conn.execute(insert(table).values(**data))
             conn.commit()
@@ -163,7 +189,12 @@ def table_edit(request, table_name, pk):
     engine = get_engine_from_session(request)
     metadata = MetaData()
     table = Table(table_name, metadata, autoload_with=engine)
+    
     key_col = list(table.primary_key.columns)[0].name
+    editable_cols = [
+        col for col in table.columns
+        if not col.primary_key and col.name != 'last_update'
+    ]
 
     with engine.connect() as conn:
         existing = conn.execute(
@@ -171,19 +202,36 @@ def table_edit(request, table_name, pk):
         ).mappings().first()
 
     fields = []
-    for col in table.columns:
-        value = existing.get(col.name, '')
-        if isinstance(value, (Date, DateTime)):
-            value = value.isoformat()
-        is_date = isinstance(col.type, (Date, DateTime))
-        fields.append((col.name, value, is_date))
+    for col in editable_cols:
+        raw_val = existing.get(col.name)
+        is_date     = isinstance(col.type, Date)
+        is_datetime = isinstance(col.type, DateTime)
 
+        if is_date and raw_val:
+            val = raw_val.isoformat()
+        elif is_datetime and raw_val:
+            # datetime to 'YYYY-MM-DDTHH:MM'
+            val = raw_val.strftime("%Y-%m-%dT%H:%M")
+        else:
+            val = raw_val or ''
+
+        fields.append((col.name, val, is_date, is_datetime))
 
     if request.method == 'POST':
-        data = {col: request.POST.get(col) for col, _, _ in fields}
+        data = {}
+        for col_name, _, is_date, is_datetime in fields:
+            raw = request.POST.get(col_name, '').strip()
+            if is_date:
+                data[col_name] = raw or None
+            elif is_datetime:
+                data[col_name] = raw + ':00' if raw else None
+            else:
+                data[col_name] = raw or None
         with engine.connect() as conn:
             conn.execute(
-                update(table).where(table.c[key_col] == pk).values(**data)
+                update(table)
+                .where(table.c[key_col] == pk)
+                .values(**data)
             )
             conn.commit()
         return redirect('table_list', table_name=table_name)

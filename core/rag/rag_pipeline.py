@@ -16,14 +16,25 @@ class RAGPipeline:
         self.retriever = retriever
         self.engine = engine
         
+        self.prompt_tmpl = PromptTemplate.from_template(
+            """Schema:
+                {context}
+
+                Note:
+                - Do not reference any non-existent columns.
+
+                Generate a SQL query for the following question:
+                {question}
+
+                Only output the SQL."""
+        )
+        
     def run(self, question: str):
         docs = self.retriever.invoke(question)
         context = "\n".join([d.page_content for d in docs])
-        prompt = (
-            f"Schema:\n{context}\n\n"
-            f"Generate a SQL query for the following question:\n"
-            f"{question}\n"
-            f"Only output the SQL."
+        prompt = self.prompt_tmpl.format(
+            context=context,
+            question=question
         )
         sql = self.llm.generate(prompt)
         sql = clean_sql_output(sql) 

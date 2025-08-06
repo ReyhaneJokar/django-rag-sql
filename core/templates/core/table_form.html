@@ -1,5 +1,4 @@
 {% extends 'core/base.html' %}
-
 {% block content %}
   <h2>
     {% if is_edit %}Edit Row {{ pk }} in {{ table_name }}
@@ -7,24 +6,18 @@
   </h2>
 
   <form method="post">{% csrf_token %}
-    {% for col, val, is_date in fields %}
+    {% for col, val, is_date, is_datetime in fields %}
       <label>{{ col }}</label><br>
 
       {% if is_date %}
-        <input
-          type="date"
-          name="{{ col }}"
-          value="{{ val }}"
-        ><br><br>
+        <input type="date" name="{{ col }}" value="{{ val }}"><br><br>
+      {% elif is_datetime %}
+        <input type="datetime-local" name="{{ col }}" value="{{ val }}"><br><br>
       {% else %}
-        <input
-          type="text"
-          name="{{ col }}"
-          value="{{ val }}"
-        ><br><br>
+        <input type="text" name="{{ col }}" value="{{ val }}"><br><br>
       {% endif %}
-    {% endfor %}
 
+    {% endfor %}
     <button type="submit">
       {% if is_edit %}Save Changes{% else %}Add Row{% endif %}
     </button>
