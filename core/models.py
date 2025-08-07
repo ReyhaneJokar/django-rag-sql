@@ -16,6 +16,17 @@ class ConnectionConfig(models.Model):
     username = models.CharField(max_length=50)
     password = models.CharField(max_length=50)
     database_name = models.CharField(max_length=50)
+    custom_prompt = models.TextField(blank=True, help_text="Any additional text you want to be added to the RAG prompt")
+    created_at    = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
         return f"{self.database_name}"
+    
+class AudioQuery(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='audio_queries')
+    audio_file = models.FileField(upload_to='voice_queries/')
+    transcript = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.owner.username} @ {self.created_at:%Y-%m-%d %H:%M}"

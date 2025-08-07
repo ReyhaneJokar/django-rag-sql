@@ -1,5 +1,6 @@
 from langchain_community.vectorstores import Chroma
 from sqlalchemy import inspect
+from sqlalchemy.schema import Table
 from langchain.schema import Document
 
 # extract tabel's metadata
@@ -8,9 +9,20 @@ def build_retriever(engine, embeddings, persist_directory: str = "chromadb"):
     docs = []
     for table_name in inspector.get_table_names():
         cols = inspector.get_columns(table_name)
-        schema = f"Table: {table_name}\nColumns:\n"
+        tbl_comment = inspector.get_table_comment(table_name).get('text') or ''
+        schema = f"Table: {table_name}\n"
+        if tbl_comment:
+            schema += f"Description: {tbl_comment}\n"
+
+        schema += "Columns:\n"
         for col in cols:
-            schema += f" - {col['name']} ({col['type']})\n"
+            name = col['name']
+            typ  = col['type']
+            comment = col.get('comment') or ''
+            line = f" - {name} ({typ})"
+            if comment:
+                line += f"  # {comment}"
+            schema += line + "\n"
         docs.append(Document(page_content=schema, metadata={"table": table_name}))
 
     vector_store = Chroma.from_documents(

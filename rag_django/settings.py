@@ -11,9 +11,12 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
 # Quick-start development settings - unsuitable for production
@@ -62,6 +65,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.user_prompt',
             ],
         },
     },
@@ -122,6 +126,9 @@ STATICFILES_DIRS = [ BASE_DIR / 'static' ]
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'connections'
 LOGOUT_REDIRECT_URL = 'login'
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

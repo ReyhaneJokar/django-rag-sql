@@ -11,10 +11,11 @@ def clean_sql_output(sql_text: str) -> str:
 
 
 class RAGPipeline:
-    def __init__(self, llm, retriever, engine):
+    def __init__(self, llm, retriever, engine, user_prompt):
         self.llm = llm
         self.retriever = retriever
         self.engine = engine
+        self.user_prompt = user_prompt.strip()
         
         self.prompt_tmpl = PromptTemplate.from_template(
             """Schema:
@@ -22,7 +23,12 @@ class RAGPipeline:
 
                 Note:
                 - Do not reference any non-existent columns.
-
+                - Generate a single valid SQL query that answers the question.
+                - Use only tables and columns shown in the schema above.
+                - Always return a meaningful SQL statement—even if unsure, attempt a best guess.
+                
+                {user_prompt}
+                
                 Generate a SQL query for the following question:
                 {question}
 
@@ -37,7 +43,10 @@ class RAGPipeline:
             question=question
         )
         sql = self.llm.generate(prompt)
-        sql = clean_sql_output(sql) 
+        sql = clean_sql_output(sql)
+        clean = sql.strip()
+        if not clean or clean.startswith("--"):
+            raise ValueError("Model requested schema info or returned comment-only SQL.")
 
         # run query on database
         with self.engine.connect() as conn:

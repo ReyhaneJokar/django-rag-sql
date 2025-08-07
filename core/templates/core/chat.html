@@ -1,14 +1,30 @@
 {% extends 'core/base.html' %}
 {% block content %}
   <h2>Chat</h2>
-  <form method="post">
+  <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-    <textarea name="question" rows="3" style="width:100%;">{{ request.POST.question }}</textarea><br>
-    <button type="submit">Ask</button>
+    <div>
+      <label for="id_question">Ask your question:</label><br>
+      <textarea id="id_question" name="question" rows="3"
+                style="width:100%;">{{ request.POST.question }}</textarea>
+    </div>
+    <div style="margin-top:1rem; display:flex; align-items:center;">
+      <button type="submit" class="btn btn-primary">Ask</button>
+      <label for="id_audio_file" style="margin-left:1rem;">Or upload voice:</label>
+      <input type="file" id="id_audio_file" name="audio_file"
+             accept="audio/*" style="margin-left:.5rem;">
+    </div>
   </form>
 
+  <hr>
+
+  {% if is_voice and transcript %}
+    <h3>Transcript:</h3>
+    <blockquote>{{ transcript }}</blockquote>
+  {% endif %}
+
   {% if error %}
-    <div class="error">Error: {{ error }}</div>
+    <div class="alert alert-danger">Error: {{ error }}</div>
   {% endif %}
 
   {% if sql %}

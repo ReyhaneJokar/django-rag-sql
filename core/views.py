@@ -2,14 +2,18 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from sqlalchemy import inspect, Table, MetaData, select, insert, update, delete
 from sqlalchemy.types import Date, DateTime
+import openai
+from django.conf import settings
 from .models import ConnectionConfig
-from .forms import ConnectionForm
+from .forms import ConnectionForm, AudioQueryForm
 from core.rag.llm_utils import load_llm, load_embeddings
 from core.rag.db_utils import connect_db
 from core.rag.retriever import build_retriever
 from core.rag.rag_pipeline import RAGPipeline
 
 # Create your views here.
+
+openai.api_key = settings.OPENAI_API_KEY
 
 DIALECT_MAP = {
     'postgres':   'postgresql+psycopg2',         
@@ -81,6 +85,8 @@ def chat_view(request):
     sql = None
     rows = None
     error = None
+    transcript= None
+    is_voice   = False
 
     conn_id = request.session.get('connection_id')
     if not conn_id:
@@ -89,28 +95,52 @@ def chat_view(request):
     # recreating connection string and engine
     conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
     try:
-        conn_str = conn_str_for(conn)
-        engine   = connect_db(conn_str)
+        engine = connect_db(conn_str_for(conn))
     except Exception as e:
         return redirect('dashboard')
+    
+    user_prompt = conn.custom_prompt or ""
+    audio_form = AudioQueryForm()
 
     if request.method == 'POST':
-        question = request.POST['question']
-        llm = load_llm()
-        embeddings = load_embeddings()
-        retriever = build_retriever(engine, embeddings)
-        pipeline = RAGPipeline(llm, retriever, engine)
-        try:
-            sql, rows = pipeline.run(question)
-        except Exception as e:
-            error = str(e)
-        context = {
-        'sql':      sql,
-        'response': rows,
-        'error':    error,
-        }
-        return render(request, 'core/chat.html', context)
-    return render(request, 'core/chat.html')
+        if request.FILES.get('audio_file'):
+            is_voice = True
+            audio_form = AudioQueryForm(request.POST, request.FILES)
+            if audio_form.is_valid():
+                aq = audio_form.save(commit=False)
+                aq.owner = request.user
+                aq.save()
+                try:
+                    transcript_resp = openai.Audio.transcribe(
+                        "whisper-1",
+                        open(aq.audio_file.path, "rb")
+                    )
+                    transcript = transcript_resp["text"].strip()
+                    aq.transcript = transcript
+                    aq.save()
+                except Exception as e:
+                    error = f"Transcription failed: {e}"
+        else:
+            transcript = request.POST.get('question', '').strip()
+            if transcript and not error:
+                llm        = load_llm()
+                embeddings = load_embeddings()
+                retriever  = build_retriever(engine, embeddings)
+                pipeline   = RAGPipeline(llm, retriever, engine, user_prompt)
+                try:
+                    sql, rows = pipeline.run(transcript)
+                except Exception as e:
+                    error = str(e)
+
+    return render(request, 'core/chat.html', {
+        'sql':        sql,
+        'response':   rows,
+        'error':      error,
+        'transcript': transcript,
+        'is_voice':   is_voice,
+        'audio_form': audio_form,
+        'user_prompt': user_prompt,
+    })
 
 
 # ---------------------- CRUD OPERATIONS ON DATABASE -------------------
