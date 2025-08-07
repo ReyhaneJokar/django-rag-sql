@@ -4,12 +4,13 @@ from sqlalchemy import inspect, Table, MetaData, select, insert, update, delete
 from sqlalchemy.types import Date, DateTime
 import openai
 from django.conf import settings
-from .models import ConnectionConfig
-from .forms import ConnectionForm, AudioQueryForm
+from core.models import ConnectionConfig
+from core.forms import ConnectionForm, AudioQueryForm
 from core.rag.llm_utils import load_llm, load_embeddings
 from core.rag.db_utils import connect_db
 from core.rag.retriever import build_retriever
 from core.rag.rag_pipeline import RAGPipeline
+
 
 # Create your views here.
 
@@ -132,6 +133,8 @@ def chat_view(request):
                 except Exception as e:
                     error = str(e)
 
+    # print("DEBUG user_prompt:", repr(user_prompt), flush=True)
+    
     return render(request, 'core/chat.html', {
         'sql':        sql,
         'response':   rows,

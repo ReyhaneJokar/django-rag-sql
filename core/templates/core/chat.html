@@ -1,6 +1,12 @@
 {% extends 'core/base.html' %}
 {% block content %}
   <h2>Chat</h2>
+    {% if user_prompt|default:"" %}
+    <div class="alert alert-info">
+      <strong>Custom Prompt Applied:</strong><br>
+      {{ user_prompt|linebreaksbr }}
+    </div>
+    {% endif %}
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     <div>
