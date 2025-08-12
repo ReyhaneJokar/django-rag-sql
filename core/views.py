@@ -32,7 +32,7 @@ def _detect_device():
     return "cpu"
     
 
-def load_local_whisper(model_size="large-v3-turbo", device=None):
+def load_local_whisper(model_size="tiny", device=None):
     global _LOCAL_WHISPER
     if _LOCAL_WHISPER is None:
         with _LOCAL_LOCK:
@@ -45,7 +45,7 @@ def load_local_whisper(model_size="large-v3-turbo", device=None):
     return _LOCAL_WHISPER
 
 
-def transcribe_local_whisper(audio_path: str, prefer_model="large-v3-turbo",  language: str | None = "en"):
+def transcribe_local_whisper(audio_path: str, prefer_model="tiny",  language: str | None = "en"):
     device = _detect_device()
     try:
         model = load_local_whisper(model_size=prefer_model, device=device)
@@ -160,7 +160,7 @@ def chat_view(request):
                 aq.owner = request.user
                 aq.save()
                 try:
-                    transcript = transcribe_local_whisper(aq.audio_file.path, prefer_model="large-v3-turbo", language="en")
+                    transcript = transcribe_local_whisper(aq.audio_file.path, prefer_model="tiny", language="en")
                     aq.transcript = transcript
                     aq.save()
                 except Exception as e:
