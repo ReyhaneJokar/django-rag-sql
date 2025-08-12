@@ -2,19 +2,68 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from sqlalchemy import inspect, Table, MetaData, select, insert, update, delete
 from sqlalchemy.types import Date, DateTime
-import openai
-from django.conf import settings
+import threading
+import logging
+import whisper
 from core.models import ConnectionConfig
 from core.forms import ConnectionForm, AudioQueryForm
 from core.rag.llm_utils import load_llm, load_embeddings
 from core.rag.db_utils import connect_db
 from core.rag.retriever import build_retriever
 from core.rag.rag_pipeline import RAGPipeline
-
+try:
+    import torch
+except Exception:
+    torch = None
 
 # Create your views here.
 
-openai.api_key = settings.OPENAI_API_KEY
+_LOCAL_WHISPER = None
+_LOCAL_LOCK = threading.Lock()
+_LOG = logging.getLogger(__name__)
+
+def _detect_device():
+    if torch is not None:
+        try:
+            if torch.cuda.is_available():
+                return "cuda"
+        except Exception:
+            pass
+    return "cpu"
+    
+
+def load_local_whisper(model_size="large-v3-turbo", device=None):
+    global _LOCAL_WHISPER
+    if _LOCAL_WHISPER is None:
+        with _LOCAL_LOCK:
+            if _LOCAL_WHISPER is None:
+                if device is None:
+                    device = _detect_device()
+                _LOG.info("Loading Whisper model '%s' on device=%s ...", model_size, device)
+                _LOCAL_WHISPER = whisper.load_model(model_size, device=device)
+                _LOG.info("Whisper model loaded.")
+    return _LOCAL_WHISPER
+
+
+def transcribe_local_whisper(audio_path: str, prefer_model="large-v3-turbo",  language: str | None = "en"):
+    device = _detect_device()
+    try:
+        model = load_local_whisper(model_size=prefer_model, device=device)
+        res = model.transcribe(audio_path, beam_size=1, language=language)
+        return res.get("text", "").strip()
+    except (RuntimeError, MemoryError) as e:
+        _LOG.warning("Primary model '%s' failed on device %s: %s. Trying fallback 'base' on cpu.", prefer_model, device, e)
+        with _LOCAL_LOCK:
+            global _LOCAL_WHISPER
+            _LOCAL_WHISPER = None
+        try:
+            model = load_local_whisper(model_size="base", device="cpu")
+            res = model.transcribe(audio_path, beam_size=1, language=language)
+            return res.get("text", "").strip()
+        except Exception as e2:
+            _LOG.exception("Fallback transcription also failed")
+            raise RuntimeError(f"Local transcription failed (primary error: {e}; fallback error: {e2})")
+
 
 DIALECT_MAP = {
     'postgres':   'postgresql+psycopg2',         
@@ -38,7 +87,6 @@ def conn_str_for(conn):
             f"{dialect}://{conn.username}:{conn.password}"
             f"@{conn.host}:{conn.port}/{conn.database_name}"
         )
-
 
 @login_required
 def connections_view(request):
@@ -112,28 +160,23 @@ def chat_view(request):
                 aq.owner = request.user
                 aq.save()
                 try:
-                    transcript_resp = openai.Audio.transcribe(
-                        "whisper-1",
-                        open(aq.audio_file.path, "rb")
-                    )
-                    transcript = transcript_resp["text"].strip()
+                    transcript = transcribe_local_whisper(aq.audio_file.path, prefer_model="large-v3-turbo", language="en")
                     aq.transcript = transcript
                     aq.save()
                 except Exception as e:
+                    _LOG.exception("Transcription failed")
                     error = f"Transcription failed: {e}"
         else:
             transcript = request.POST.get('question', '').strip()
-            if transcript and not error:
-                llm        = load_llm()
-                embeddings = load_embeddings()
-                retriever  = build_retriever(engine, embeddings)
-                pipeline   = RAGPipeline(llm, retriever, engine, user_prompt)
-                try:
-                    sql, rows = pipeline.run(transcript)
-                except Exception as e:
-                    error = str(e)
-
-    # print("DEBUG user_prompt:", repr(user_prompt), flush=True)
+        if transcript and not error:
+            llm        = load_llm()
+            embeddings = load_embeddings()
+            retriever  = build_retriever(engine, embeddings)
+            pipeline   = RAGPipeline(llm, retriever, engine, user_prompt)
+            try:
+                sql, rows = pipeline.run(transcript)
+            except Exception as e:
+                error = str(e)
     
     return render(request, 'core/chat.html', {
         'sql':        sql,

@@ -40,7 +40,8 @@ class RAGPipeline:
         context = "\n".join([d.page_content for d in docs])
         prompt = self.prompt_tmpl.format(
             context=context,
-            question=question
+            question=question,
+            user_prompt=self.user_prompt
         )
         sql = self.llm.generate(prompt)
         sql = clean_sql_output(sql)

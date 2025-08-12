@@ -1,24 +1,33 @@
 {% extends 'core/base.html' %}
 {% block content %}
   <h2>Chat</h2>
-    {% if user_prompt|default:"" %}
-    <div class="alert alert-info">
-      <strong>Custom Prompt Applied:</strong><br>
-      {{ user_prompt|linebreaksbr }}
+
+  {% if user_prompt|default:"" %}
+    <div>
+      <strong>Custom Prompt Applied:</strong>
+      <div class="custom-prompt-box" aria-live="polite">
+        {{ user_prompt|linebreaksbr }}
+      </div>
     </div>
-    {% endif %}
+  {% endif %}
+
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-    <div>
-      <label for="id_question">Ask your question:</label><br>
-      <textarea id="id_question" name="question" rows="3"
-                style="width:100%;">{{ request.POST.question }}</textarea>
-    </div>
-    <div style="margin-top:1rem; display:flex; align-items:center;">
-      <button type="submit" class="btn btn-primary">Ask</button>
-      <label for="id_audio_file" style="margin-left:1rem;">Or upload voice:</label>
-      <input type="file" id="id_audio_file" name="audio_file"
-             accept="audio/*" style="margin-left:.5rem;">
+    <div class="chat-form-row">
+      <div>
+        <label for="id_question">Ask your question:</label><br>
+        <textarea id="id_question" name="question" rows="3">{{ request.POST.question }}</textarea>
+      </div>
+
+      <div class="file-row">
+        <label for="id_audio_file" style="margin-right:.25rem;">Or upload voice:</label>
+        <input type="file" id="id_audio_file" name="audio_file" accept="audio/*">
+        <small style="color:#666;">(max 30s recommended)</small>
+      </div>
+
+      <div>
+        <button type="submit" class="btn-primary">Ask</button>
+      </div>
     </div>
   </form>
 
@@ -26,16 +35,16 @@
 
   {% if is_voice and transcript %}
     <h3>Transcript:</h3>
-    <blockquote>{{ transcript }}</blockquote>
+    <blockquote class="transcript">{{ transcript }}</blockquote>
   {% endif %}
 
   {% if error %}
-    <div class="alert alert-danger">Error: {{ error }}</div>
+    <div class="alert-danger">Error: {{ error }}</div>
   {% endif %}
 
   {% if sql %}
     <h3>Generated SQL:</h3>
-    <pre>{{ sql }}</pre>
+    <pre class="sql-pre" aria-label="Generated SQL">{{ sql }}</pre>
   {% endif %}
 
   {% if response %}
