@@ -1,12 +1,16 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
+from django.urls import reverse
+from django.views.decorators.http import require_POST
+from django.contrib import messages
 from sqlalchemy import inspect, Table, MetaData, select, insert, update, delete
 from sqlalchemy.types import Date, DateTime
 import threading
 import logging
 import whisper
+import requests
 from core.models import ConnectionConfig
-from core.forms import ConnectionForm, AudioQueryForm
+from core.forms import ConnectionForm, AudioQueryForm, CustomPromptForm
 from core.rag.llm_utils import load_llm, load_embeddings
 from core.rag.db_utils import connect_db
 from core.rag.retriever import build_retriever
@@ -136,6 +140,7 @@ def chat_view(request):
     error = None
     transcript= None
     is_voice   = False
+    extra_plot = None
 
     conn_id = request.session.get('connection_id')
     if not conn_id:
@@ -149,6 +154,7 @@ def chat_view(request):
         return redirect('dashboard')
     
     user_prompt = conn.custom_prompt or ""
+    custom_prompt_form = CustomPromptForm(initial={"custom_prompt": user_prompt})
     audio_form = AudioQueryForm()
 
     if request.method == 'POST':
@@ -169,11 +175,44 @@ def chat_view(request):
         else:
             transcript = request.POST.get('question', '').strip()
         if transcript and not error:
-            llm        = load_llm()
-            embeddings = load_embeddings()
-            retriever  = build_retriever(engine, embeddings)
-            pipeline   = RAGPipeline(llm, retriever, engine, user_prompt)
             try:
+                tools_url = request.build_absolute_uri(reverse('mcp_tools_call'))
+                payload = {
+                    "tool": "chart_detector",
+                    "conn_id": conn.id,
+                    "input": {"question": transcript}
+                }
+                resp = requests.post(tools_url, json=payload, timeout=20)
+                resp.raise_for_status()
+                detector_res = resp.json().get("result", {})
+            except Exception as e:
+                detector_res = {"plot": False}
+                _LOG.exception("chart_detector failed: %s", e)
+
+            if detector_res.get("plot"):
+                # Validate SQL on server side and render
+                suggested_sql = detector_res.get("sql")
+                suggested_plot = detector_res.get("plot_type") or "table"
+                try:
+                    payload = {
+                        "tool": "chart_renderer",
+                        "conn_id": conn.id,
+                        "input": {"sql": suggested_sql, "plot_type": suggested_plot, "limit_rows": 200}
+                    }
+                    r2 = requests.post(tools_url, json=payload, timeout=30)
+                    r2.raise_for_status()
+                    renderer_out = r2.json().get("result", {})
+                    plot_url = renderer_out.get("image_url")
+                    extra_plot = plot_url
+                except Exception as e:
+                    _LOG.exception("chart_renderer failed: %s", e)
+                    extra_plot = None
+
+            try:
+                llm        = load_llm()
+                embeddings = load_embeddings()
+                retriever  = build_retriever(engine, embeddings)
+                pipeline   = RAGPipeline(llm, retriever, engine, user_prompt)
                 sql, rows = pipeline.run(transcript)
             except Exception as e:
                 error = str(e)
@@ -186,7 +225,27 @@ def chat_view(request):
         'is_voice':   is_voice,
         'audio_form': audio_form,
         'user_prompt': user_prompt,
+        'plot_url': extra_plot,
+        'custom_prompt_form': custom_prompt_form,
     })
+
+@require_POST
+@login_required
+def update_custom_prompt(request):
+    conn_id = request.session.get('connection_id')
+    if not conn_id:
+        messages.error(request, "No connection selected. Please choose a connection first.")
+        return redirect('connections')
+
+    conn = get_object_or_404(ConnectionConfig, pk=conn_id, owner=request.user)
+    form = CustomPromptForm(request.POST)
+    if form.is_valid():
+        conn.custom_prompt = form.cleaned_data.get("custom_prompt", "") or ""
+        conn.save()
+        messages.success(request, "Custom prompt updated.")
+    else:
+        messages.error(request, "Invalid input for custom prompt.")
+    return redirect('chat')
 
 
 # ---------------------- CRUD OPERATIONS ON DATABASE -------------------

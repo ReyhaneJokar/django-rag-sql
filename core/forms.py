@@ -18,3 +18,13 @@ class AudioQueryForm(forms.ModelForm):
         widgets = {
             'audio_file': forms.FileInput(attrs={'accept': 'audio/*'})
         }
+        
+class CustomPromptForm(forms.Form):
+    custom_prompt = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            "rows": 6,
+            "placeholder": "Enter a custom prompt for this database (saved to the current connection)."
+        }),
+        label="Custom prompt"
+    )

@@ -6,3 +6,6 @@ langchain-core>=0.1.50
 Faker>=18.0.0
 openai-whisper
 torch
+matplotlib>=3.7
+pillow
+sqlparse    

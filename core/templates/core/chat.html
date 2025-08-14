@@ -2,30 +2,59 @@
 {% block content %}
   <h2>Chat</h2>
 
-  {% if user_prompt|default:"" %}
-    <div>
+  <div style="display:flex; gap:1rem; align-items:flex-start;">
+    <div style="flex:1;">
       <strong>Custom Prompt Applied:</strong>
-      <div class="custom-prompt-box" aria-live="polite">
+
+      <div class="prompt-box" id="promptDisplay" {% if not user_prompt %}style="display:none;"{% endif %}>
         {{ user_prompt|linebreaksbr }}
       </div>
+
+      <div class="prompt-box empty" id="promptEmpty" {% if user_prompt %}style="display:none;"{% endif %}>
+        <em>No custom prompt set for this connection.</em>
+      </div>
+
+      <div id="promptInlineForm" style="display:none; margin-top:.5rem;">
+        <form method="post" action="{% url 'update_custom_prompt' %}">
+          {% csrf_token %}
+          <textarea name="custom_prompt" id="customPromptTextarea" class="prompt-textarea">{{ user_prompt }}</textarea>
+          <div class="prompt-actions" style="margin-top:.5rem;">
+            <button type="submit" class="btn btn-primary">Save prompt</button>
+            <button id="promptCancelBtn" type="button" class="btn" style="margin-left:.5rem;">Cancel</button>
+            <button id="promptResetBtn" type="button" class="btn" style="margin-left:.5rem;">Reset</button>
+          </div>
+        </form>
+        <div class="prompt-note" style="margin-top:.5rem;">
+          <strong>Note:</strong> Use this box to adjust the custom prompt for the selected connection. Changes will apply immediately after saving.
+        </div>
+      </div>
+
     </div>
-  {% endif %}
+
+    <div style="width:160px;">
+      <button id="editPromptBtn" class="btn btn-primary" type="button">Edit prompt</button>
+    </div>
+  </div>
+
+  <hr style="margin-top:1rem; margin-bottom:1rem;">
 
   <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     <div class="chat-form-row">
       <div>
         <label for="id_question">Ask your question:</label><br>
-        <textarea id="id_question" name="question" rows="3">{{ request.POST.question }}</textarea>
+        <textarea id="id_question" name="question" rows="3" style="width:100%;">{{ request.POST.question }}</textarea>
       </div>
 
       <div class="file-row">
-        <label for="id_audio_file" style="margin-right:.25rem;">Or upload voice:</label>
-        <input type="file" id="id_audio_file" name="audio_file" accept="audio/*">
-        <small style="color:#666;">(max 30s recommended)</small>
+        <div style="margin-top:1rem; display:flex; align-items:center;">
+          <label for="id_audio_file" style="margin-right:.5rem;">Or upload voice:</label>
+          <input type="file" id="id_audio_file" name="audio_file" accept="audio/*">
+          <small style="color:#666; margin-left:.5rem;">(max 30s recommended)</small>
+        </div>
       </div>
 
-      <div>
+      <div style="margin-top:1rem;">
         <button type="submit" class="btn-primary">Ask</button>
       </div>
     </div>
@@ -47,6 +76,13 @@
     <pre class="sql-pre" aria-label="Generated SQL">{{ sql }}</pre>
   {% endif %}
 
+  {% if plot_url %}
+    <h3>Chart:</h3>
+    <div class="chart-box">
+      <img src="{{ plot_url }}" alt="Chart" style="max-width:100%; height:auto; border:1px solid #ddd; border-radius:6px;">
+    </div>
+  {% endif %}
+
   {% if response %}
     <h3>Results:</h3>
     <div class="chat-results">
@@ -55,4 +91,69 @@
       {% endfor %}
     </div>
   {% endif %}
+
+  <script>
+    const editBtn = document.getElementById('editPromptBtn');
+    const displayDiv = document.getElementById('promptDisplay');
+    const emptyDiv = document.getElementById('promptEmpty');
+    const inlineForm = document.getElementById('promptInlineForm');
+    const cancelBtn = document.getElementById('promptCancelBtn');
+    const resetBtn = document.getElementById('promptResetBtn');
+    const textarea = document.getElementById('customPromptTextarea');
+
+    const originalPrompt = `{{ user_prompt|escapejs }}`;
+
+    function showInlineEdit() {
+      if (displayDiv) displayDiv.style.display = 'none';
+      if (emptyDiv) emptyDiv.style.display = 'none';
+      if (inlineForm) {
+        inlineForm.style.display = 'block';
+        textarea.focus();
+        try {
+          textarea.selectionStart = textarea.selectionEnd = textarea.value.length;
+        } catch (e) {}
+        textarea.scrollTop = textarea.scrollHeight;
+        inlineForm.scrollIntoView({behavior: 'smooth', block: 'center'});
+      }
+    }
+    function hideInlineEdit() {
+      if (inlineForm) inlineForm.style.display = 'none';
+      if (originalPrompt && originalPrompt.trim().length > 0) {
+        if (displayDiv) displayDiv.style.display = 'block';
+      } else {
+        if (emptyDiv) emptyDiv.style.display = 'block';
+      }
+    }
+
+    if (editBtn) {
+      editBtn.addEventListener('click', (e) => {
+        if (inlineForm.style.display === 'block') {
+          hideInlineEdit();
+        } else {
+          showInlineEdit();
+        }
+      });
+    }
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', (e) => {
+        textarea.value = originalPrompt;
+        hideInlineEdit();
+      });
+    }
+    if (resetBtn) {
+      resetBtn.addEventListener('click', (e) => {
+        textarea.value = '';
+        textarea.focus();
+      });
+    }
+
+    document.addEventListener('keydown', function(ev) {
+      if (ev.key === 'Escape') {
+        if (inlineForm && inlineForm.style.display === 'block') {
+          textarea.value = originalPrompt;
+          hideInlineEdit();
+        }
+      }
+    });
+  </script>
 {% endblock %}
