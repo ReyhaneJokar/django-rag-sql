@@ -9,6 +9,7 @@ import threading
 import logging
 import whisper
 import requests
+from mcp_tools.tools import chart_detector, chart_renderer
 from core.models import ConnectionConfig
 from core.forms import ConnectionForm, AudioQueryForm, CustomPromptForm
 from core.rag.llm_utils import load_llm, load_embeddings
@@ -140,8 +141,9 @@ def chat_view(request):
     error = None
     transcript= None
     is_voice   = False
-    extra_plot = None
-
+    plot_url = None
+    plot_info = None
+    
     conn_id = request.session.get('connection_id')
     if not conn_id:
         return redirect('connections')
@@ -154,8 +156,8 @@ def chat_view(request):
         return redirect('dashboard')
     
     user_prompt = conn.custom_prompt or ""
-    custom_prompt_form = CustomPromptForm(initial={"custom_prompt": user_prompt})
     audio_form = AudioQueryForm()
+    custom_prompt_form = CustomPromptForm(initial={"custom_prompt": user_prompt})
 
     if request.method == 'POST':
         if request.FILES.get('audio_file'):
@@ -176,37 +178,29 @@ def chat_view(request):
             transcript = request.POST.get('question', '').strip()
         if transcript and not error:
             try:
-                tools_url = request.build_absolute_uri(reverse('mcp_tools_call'))
-                payload = {
-                    "tool": "chart_detector",
-                    "conn_id": conn.id,
-                    "input": {"question": transcript}
-                }
-                resp = requests.post(tools_url, json=payload, timeout=20)
-                resp.raise_for_status()
-                detector_res = resp.json().get("result", {})
+                detector_res = chart_detector(engine, transcript)
             except Exception as e:
                 detector_res = {"plot": False}
-                _LOG.exception("chart_detector failed: %s", e)
-
-            if detector_res.get("plot"):
-                # Validate SQL on server side and render
+                error = f"chart_detector failed: {e}"
+            if detector_res and detector_res.get("plot"):
                 suggested_sql = detector_res.get("sql")
-                suggested_plot = detector_res.get("plot_type") or "table"
-                try:
-                    payload = {
-                        "tool": "chart_renderer",
-                        "conn_id": conn.id,
-                        "input": {"sql": suggested_sql, "plot_type": suggested_plot, "limit_rows": 200}
-                    }
-                    r2 = requests.post(tools_url, json=payload, timeout=30)
-                    r2.raise_for_status()
-                    renderer_out = r2.json().get("result", {})
-                    plot_url = renderer_out.get("image_url")
-                    extra_plot = plot_url
-                except Exception as e:
-                    _LOG.exception("chart_renderer failed: %s", e)
-                    extra_plot = None
+                suggested_plot_type = detector_res.get("plot_type") or "bar"
+                if not suggested_sql:
+                    # nothing to run — fallback to normal pipeline
+                    pass
+                else:
+                    try:
+                        render_res = chart_renderer(engine, suggested_sql, suggested_plot_type, limit_rows=500)
+                        plot_url = render_res.get("plot_url")
+                        plot_info = {
+                            "cols": render_res.get("cols"),
+                            "rows": render_res.get("rows"),
+                        }
+                        sql = suggested_sql
+                        rows = plot_info.get("rows") if plot_info else None
+                    except Exception as e:
+                        error = f"Chart rendering failed: {e}"
+                        pass
 
             try:
                 llm        = load_llm()
@@ -225,8 +219,9 @@ def chat_view(request):
         'is_voice':   is_voice,
         'audio_form': audio_form,
         'user_prompt': user_prompt,
-        'plot_url': extra_plot,
         'custom_prompt_form': custom_prompt_form,
+        'plot_url': plot_url,
+        'plot_info': plot_info,
     })
 
 @require_POST
