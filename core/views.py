@@ -8,7 +8,7 @@ from sqlalchemy.types import Date, DateTime
 import threading
 import logging
 import whisper
-from my_tools.tools import chart_detector, chart_renderer
+from core.mcp_client import call_tool
 from core.models import ConnectionConfig
 from core.forms import ConnectionForm, AudioQueryForm, CustomPromptForm
 from core.rag.llm_utils import load_llm, load_embeddings
@@ -177,39 +177,34 @@ def chat_view(request):
             transcript = request.POST.get('question', '').strip()
         if transcript and not error:
             try:
-                detector_res = chart_detector(engine, transcript)
-            except Exception as e:
-                detector_res = {"plot": False}
-                error = f"chart_detector failed: {e}"
-            if detector_res and detector_res.get("plot"):
-                suggested_sql = detector_res.get("sql")
-                suggested_plot_type = detector_res.get("plot_type") or "bar"
-                if not suggested_sql:
-                    # nothing to run — fallback to normal pipeline
-                    pass
-                else:
-                    try:
-                        render_res = chart_renderer(engine, suggested_sql, suggested_plot_type, limit_rows=500)
-                        plot_url = render_res.get("plot_url")
-                        plot_info = {
-                            "cols": render_res.get("cols"),
-                            "rows": render_res.get("rows"),
-                        }
-                        sql = suggested_sql
-                        rows = plot_info.get("rows") if plot_info else None
-                    except Exception as e:
-                        error = f"Chart rendering failed: {e}"
-                        pass
-
-            try:
-                llm        = load_llm()
+                llm = load_llm()
                 embeddings = load_embeddings()
-                retriever  = build_retriever(engine, embeddings)
-                pipeline   = RAGPipeline(llm, retriever, engine, user_prompt)
+                retriever = build_retriever(engine, embeddings)
+                pipeline = RAGPipeline(llm, retriever, engine, user_prompt)
                 sql, rows = pipeline.run(transcript)
             except Exception as e:
+                _LOG.exception("RAG pipeline failed")
+                sql = None
+                rows = None
                 error = str(e)
-    
+
+            try:
+                detector_res = call_tool("chart_detector", conn, {"question": transcript})
+            except Exception as e:
+                detector_res = {"plot": False}
+                _LOG.exception("chart_detector call failed: %s", e)
+
+            if detector_res.get("plot"):
+                suggested_sql = detector_res.get("sql")
+                suggested_plot_type = detector_res.get("plot_type") or "bar"
+                if suggested_sql:
+                    try:
+                        render_res = call_tool("chart_renderer", conn, {"sql": suggested_sql, "plot_type": suggested_plot_type, "limit_rows": 500})
+                        plot_url = render_res.get("plot_url")
+                        plot_info = {"cols": render_res.get("cols"), "rows": render_res.get("rows")}
+                    except Exception as e:
+                        _LOG.exception("chart_renderer call failed: %s", e)
+
     return render(request, 'core/chat.html', {
         'sql':        sql,
         'response':   rows,
