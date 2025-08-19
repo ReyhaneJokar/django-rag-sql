@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'my_tools',
+    'mcp_tools',
 ]
 
 MIDDLEWARE = [
