@@ -8,8 +8,7 @@ from sqlalchemy.types import Date, DateTime
 import threading
 import logging
 import whisper
-import requests
-from mcp_tools.tools import chart_detector, chart_renderer
+from my_tools.tools import chart_detector, chart_renderer
 from core.models import ConnectionConfig
 from core.forms import ConnectionForm, AudioQueryForm, CustomPromptForm
 from core.rag.llm_utils import load_llm, load_embeddings
